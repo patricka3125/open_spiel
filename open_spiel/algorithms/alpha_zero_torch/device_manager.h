@@ -24,51 +24,52 @@ namespace open_spiel {
 namespace algorithms {
 namespace torch_az {
 
-// Keeps track of a bunch of VPNet models, intended to be one per device, and
+// Keeps track of a bunch of models, intended to be one per device, and
 // gives them out based on usage. When you request a device you specify how much
 // work you're going to give it, which is assumed done once the loan is
 // returned.
-class DeviceManager {
- public:
+//
+// Template parameter ModelT allows reuse with different model types.
+// Default is VPNetModel for backward compatibility with existing code.
+template <typename ModelT = VPNetModel> class DeviceManager {
+public:
   DeviceManager() {
     learning_ = false;
     multiple_devices_ = false;
   }
 
-  void AddDevice(VPNetModel model) {  // Not thread safe.
+  void AddDevice(ModelT model) { // Not thread safe.
     devices.emplace_back(Device{std::move(model)});
     multiple_devices_ = devices.size() > 1;
   }
 
   // Acts as a pointer to the model, but lets the manager know when you're done.
   class DeviceLoan {
-   public:
+  public:
     // DeviceLoan is not public constructible and is move only.
-    DeviceLoan(DeviceLoan&& other) = default;
-    DeviceLoan& operator=(DeviceLoan&& other) = default;
-    DeviceLoan(const DeviceLoan&) = delete;
-    DeviceLoan& operator=(const DeviceLoan&) = delete;
+    DeviceLoan(DeviceLoan &&other) = default;
+    DeviceLoan &operator=(DeviceLoan &&other) = default;
+    DeviceLoan(const DeviceLoan &) = delete;
+    DeviceLoan &operator=(const DeviceLoan &) = delete;
 
     ~DeviceLoan() { manager_->Return(device_id_, requests_); }
-    VPNetModel* operator->() { return model_; }
+    ModelT *operator->() { return model_; }
 
-   private:
-    DeviceLoan(DeviceManager* manager, VPNetModel* model, int device_id,
+  private:
+    DeviceLoan(DeviceManager *manager, ModelT *model, int device_id,
                int requests)
-        : manager_(manager),
-          model_(model),
-          device_id_(device_id),
+        : manager_(manager), model_(model), device_id_(device_id),
           requests_(requests) {}
-    DeviceManager* manager_;
-    VPNetModel* model_;
+    DeviceManager *manager_;
+    ModelT *model_;
     int device_id_;
     int requests_;
-    friend DeviceManager;
+    friend class DeviceManager;
   };
 
   // Gives the device with the fewest outstanding requests.
   DeviceLoan Get(int requests, int device_id = -1) {
-    absl::MutexLock lock(&m_);
+    absl::MutexLock lock(m_);
     if (device_id < 0) {
       // The starting device changes depending on if we are allowed to
       // use the first device or not.
@@ -92,14 +93,14 @@ class DeviceManager {
 
   int Count() const { return devices.size(); }
 
- private:
+private:
   void Return(int device_id, int requests) {
-    absl::MutexLock lock(&m_);
+    absl::MutexLock lock(m_);
     devices[device_id].requests -= requests;
   }
 
   struct Device {
-    VPNetModel model;
+    ModelT model;
     int requests = 0;
   };
 
@@ -109,8 +110,8 @@ class DeviceManager {
   absl::Mutex m_;
 };
 
-}  // namespace torch_az
-}  // namespace algorithms
-}  // namespace open_spiel
+} // namespace torch_az
+} // namespace algorithms
+} // namespace open_spiel
 
-#endif  // OPEN_SPIEL_ALGORITHMS_ALPHA_ZERO_TORCH_DEVICE_MANAGER_H_
+#endif // OPEN_SPIEL_ALGORITHMS_ALPHA_ZERO_TORCH_DEVICE_MANAGER_H_
